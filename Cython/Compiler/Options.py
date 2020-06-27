@@ -208,6 +208,9 @@ _directive_defaults = {
     'np_pythran': False,
     'fast_gil': False,
 
+    'fastcall_args.tuple': None,  # True/False sets it explicitly. None let's Cython decide
+    'fastcall_args.dict': None,  # True/False sets it explicitly. None let's Cython decide
+
     # set __file__ and/or __path__ to known source/target path at import time (instead of not having them available)
     'set_initial_path' : None,  # SOURCEFILE or "/full/path/to/module"
 
@@ -249,7 +252,12 @@ extra_warnings = {
 }
 
 def one_of(*args):
-    def validate(name, value):
+    def validate(name, *values):
+        if len(values) != 1:
+            from .Errors import CompileError
+            raise CompileError(None,
+                    'The %s directive takes one compile-time string argument' % name)
+        value = values[0]
         if value not in args:
             raise ValueError("%s directive must be one of %s, got '%s'" % (
                 name, args, value))
@@ -258,7 +266,21 @@ def one_of(*args):
     return validate
 
 
-def normalise_encoding_name(option_name, encoding):
+def parse_truefalsenone(name, *values):
+    if len(values) != 1:
+        from .Errors import CompileError
+        raise CompileError(None,
+                "directive %s takes a single True/False/None positional argument" % name)
+    value = values[0]
+    if hasattr(value, 'lower') and value.lower() == "py_none":
+        return None
+    return parse_directive_value(name, value, type=bool)
+
+def parse_fastcall_args(name, *values):
+    from .Errors import CompileError
+    raise CompileError(None, "directive %s should be set with arguments 'tuple' or 'dict'" % name)
+
+def normalise_encoding_name(option_name, *values):
     """
     >>> normalise_encoding_name('c_string_encoding', 'ascii')
     'ascii'
@@ -277,6 +299,12 @@ def normalise_encoding_name(option_name, encoding):
     >>> normalise_encoding_name('c_string_encoding', 'SeriousLyNoSuch--Encoding')
     'SeriousLyNoSuch--Encoding'
     """
+    if len(values) != 1:
+        from .Errors import CompileError
+        raise CompileError(None,
+                'The %s directive takes one compile-time string argument' % name)
+    encoding = str(values[0])
+
     if not encoding:
         return ''
     if encoding.lower() in ('default', 'ascii', 'utf8'):
@@ -316,6 +344,9 @@ directive_types = {
     'c_string_type': one_of('bytes', 'bytearray', 'str', 'unicode'),
     'c_string_encoding': normalise_encoding_name,
     'trashcan': bool,
+    'fastcall_args.dict': parse_truefalsenone,
+    'fastcall_args.tuple': parse_truefalsenone,
+    'fastcall_args': parse_fastcall_args,  # largely a dummy, just so it gets recognised as a directive
 }
 
 for key, val in _directive_defaults.items():
@@ -362,7 +393,7 @@ directive_scopes = {  # defaults to available everywhere
 }
 
 
-def parse_directive_value(name, value, relaxed_bool=False):
+def parse_directive_value(name, value, relaxed_bool=False, type=None):
     """
     Parses value as an option value for the given name and returns
     the interpreted value. None is returned if the option does not exist.
@@ -390,7 +421,8 @@ def parse_directive_value(name, value, relaxed_bool=False):
     Traceback (most recent call last):
     ValueError: c_string_type directive must be one of ('bytes', 'bytearray', 'str', 'unicode'), got 'unnicode'
     """
-    type = directive_types.get(name)
+    if not type:
+        type = directive_types.get(name)
     if not type:
         return None
     orig_value = value

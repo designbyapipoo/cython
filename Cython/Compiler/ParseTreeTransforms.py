@@ -979,11 +979,14 @@ class InterpretCompilerDirectives(CythonTransform):
                     'The %s directive takes no keyword arguments' % optname)
             return optname, [ str(arg.value) for arg in args ]
         elif callable(directivetype):
-            if kwds is not None or len(args) != 1 or not isinstance(
-                    args[0], (ExprNodes.StringNode, ExprNodes.UnicodeNode)):
+            if kwds is not None:
                 raise PostParseError(pos,
-                    'The %s directive takes one compile-time string argument' % optname)
-            return (optname, directivetype(optname, str(args[0].value)))
+                    'The %s directive does not take keyword arguments' % optname)
+            try:
+                return (optname, directivetype(optname, *[arg.value for arg in args]))
+            except CompileError as e:
+                # convert to postparse error, make sure pos it set, re-raise
+                raise PostParseError(pos, *e.args[1:])
         else:
             assert False
 
@@ -1987,6 +1990,17 @@ if VALUE is not None:
 
     def visit_DefNode(self, node):
         node = self.visit_FuncDefNode(node)
+
+        fastcall_args_tuple = self.current_directives['fastcall_args.tuple']
+        fastcall_args_dict = self.current_directives['fastcall_args.dict']
+        if fastcall_args_tuple and node.star_arg:
+            if node.self_in_stararg:
+                error(node.pos, "Cannot use 'fastcall_args(\"*\")' on a function where the"
+                        " self argument is included in *args")
+                node.star_arg.entry.type = PyrexTypes.fastcalltuple_type
+        if fastcall_args_dict and node.starstar_arg:
+            node.starstar_arg.entry.type = PyrexTypes.fastcalldict_type
+
         env = self.current_env()
         if isinstance(node, Nodes.DefNode) and node.is_wrapper:
             env = env.parent_scope
@@ -2289,7 +2303,6 @@ class CalculateQualifiedNamesTransform(EnvTransform):
 
 
 class AnalyseExpressionsTransform(CythonTransform):
-
     def visit_ModuleNode(self, node):
         node.scope.infer_types()
         node.body = node.body.analyse_expressions(node.scope)
@@ -2465,6 +2478,7 @@ class AdjustDefByDirectives(CythonTransform, SkipDeclarations):
         if nogil:
             # TODO: turn this into a "with gil" declaration.
             error(node.pos, "Python functions cannot be declared 'nogil'")
+
         self.visitchildren(node)
         return node
 

@@ -189,12 +189,9 @@ class MarkParallelAssignments(EnvTransform):
 
     def visit_DefNode(self, node):
         # use fake expressions with the right result type
-        if node.star_arg:
-            self.mark_assignment(
-                node.star_arg, TypedExprNode(Builtin.tuple_type, node.pos))
-        if node.starstar_arg:
-            self.mark_assignment(
-                node.starstar_arg, TypedExprNode(Builtin.dict_type, node.pos))
+        # borrow implementation from ControlFlowAnalysis to handle fastcall args
+        from .FlowControl import ControlFlowAnalysis
+        ControlFlowAnalysis.handle_special_args(node, mark_call=self.mark_assignment)
         EnvTransform.visit_FuncDefNode(self, node)
         return node
 
@@ -580,6 +577,8 @@ def safe_spanning_type(types, might_overflow, pos, scope):
     # TODO: double complex should be OK as well, but we need
     # to make sure everything is supported.
     elif (result_type.is_int or result_type.is_enum) and not might_overflow:
+        return result_type
+    elif result_type.is_fastcall_tuple_or_dict:
         return result_type
     elif (not result_type.can_coerce_to_pyobject(scope)
             and not result_type.is_error):

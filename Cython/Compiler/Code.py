@@ -2053,6 +2053,8 @@ class CCodeWriter(object):
             self.put_safe(" = %s" % entry.type.literal_code(entry.init))
         elif entry.type.is_pyobject:
             self.put(" = NULL")
+        elif entry.type.is_fastcall_tuple_or_dict:
+            self.put_safe(" = %s" % entry.type.literal_code("0"))
         self.putln(";")
 
     def put_temp_declarations(self, func_context):
