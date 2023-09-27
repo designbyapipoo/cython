@@ -269,8 +269,10 @@ class SlotDescriptor(object):
             return
         preprocessor_guard = self.preprocessor_guard_code()
         if not preprocessor_guard:
-            if self.py3 and self.slot_name.startswith('bf_'):
-                # The buffer protocol requires Limited API 3.11, so check if the spec slots are available.
+            prefix = self.slot_name[:3]
+            if self.py3 and prefix in ('bf_', 'am_'):
+                # The buffer protocol requires Limited API 3.11 and 'am_send' requires 3.10,
+                # so check if the spec slots are available.
                 preprocessor_guard = "#if defined(Py_%s)" % self.slot_name
         if preprocessor_guard:
             code.putln(preprocessor_guard)
@@ -889,6 +891,17 @@ initproc = Signature("T*", 'r')            # typedef int (*initproc)(PyObject *,
 getbufferproc = Signature("TBi", "r")      # typedef int (*getbufferproc)(PyObject *, Py_buffer *, int);
 releasebufferproc = Signature("TB", "v")   # typedef void (*releasebufferproc)(PyObject *, Py_buffer *);
 
+# typedef PySendResult (*sendfunc)(PyObject* iter, PyObject* value, PyObject** result);
+sendfunc = PyrexTypes.CPtrType(PyrexTypes.CFuncType(
+        return_type=PyrexTypes.PySendResult_type,
+        args=[
+            PyrexTypes.CFuncTypeArg("iter", PyrexTypes.py_object_type),
+            PyrexTypes.CFuncTypeArg("value", PyrexTypes.py_object_type),
+            PyrexTypes.CFuncTypeArg("result", PyrexTypes.CPtrType(PyrexTypes.py_objptr_type)),
+        ],
+        exception_value="PYGEN_ERROR",
+    ))
+
 
 #------------------------------------------------------------------------------------------
 #
@@ -1027,7 +1040,9 @@ class SlotTable(object):
             MethodSlot(unaryfunc, "am_await", "__await__", method_name_to_slot),
             MethodSlot(unaryfunc, "am_aiter", "__aiter__", method_name_to_slot),
             MethodSlot(unaryfunc, "am_anext", "__anext__", method_name_to_slot),
-            EmptySlot("am_send", ifdef="PY_VERSION_HEX >= 0x030A00A3"),
+            # TODO: need to generate an appropriate C wrapper function in order to map .send() to the async slot.
+            # TODO: should we really map any .send() method to an async slot?
+            MethodSlot(sendfunc, "am_send", "send", method_name_to_slot),
         )
 
         self.slot_table = (
