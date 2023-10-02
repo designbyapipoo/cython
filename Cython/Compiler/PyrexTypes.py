@@ -20,7 +20,7 @@ from .Code import UtilityCode, LazyUtilityCode, TempitaUtilityCode
 from . import StringEncoding
 from . import Naming
 
-from .Errors import error, CannotSpecialize
+from .Errors import error, CannotSpecialize, performance_hint
 
 
 class BaseType(object):
@@ -1314,12 +1314,14 @@ class PyObjectType(PyrexType):
 
     def generate_incref(self, code, cname, nanny):
         if nanny:
+            code.funcstate.needs_refnanny = True
             code.putln("__Pyx_INCREF(%s);" % self.as_pyobject(cname))
         else:
             code.putln("Py_INCREF(%s);" % self.as_pyobject(cname))
 
     def generate_xincref(self, code, cname, nanny):
         if nanny:
+            code.funcstate.needs_refnanny = True
             code.putln("__Pyx_XINCREF(%s);" % self.as_pyobject(cname))
         else:
             code.putln("Py_XINCREF(%s);" % self.as_pyobject(cname))
@@ -1345,27 +1347,36 @@ class PyObjectType(PyrexType):
                          clear=True, clear_before_decref=clear_before_decref)
 
     def generate_gotref(self, code, cname):
+        code.funcstate.needs_refnanny = True
         code.putln("__Pyx_GOTREF(%s);" % self.as_pyobject(cname))
 
     def generate_xgotref(self, code, cname):
+        code.funcstate.needs_refnanny = True
         code.putln("__Pyx_XGOTREF(%s);" % self.as_pyobject(cname))
 
     def generate_giveref(self, code, cname):
+        code.funcstate.needs_refnanny = True
         code.putln("__Pyx_GIVEREF(%s);" % self.as_pyobject(cname))
 
     def generate_xgiveref(self, code, cname):
+        code.funcstate.needs_refnanny = True
         code.putln("__Pyx_XGIVEREF(%s);" % self.as_pyobject(cname))
 
     def generate_decref_set(self, code, cname, rhs_cname):
+        code.funcstate.needs_refnanny = True
         code.putln("__Pyx_DECREF_SET(%s, %s);" % (cname, rhs_cname))
 
     def generate_xdecref_set(self, code, cname, rhs_cname):
+        code.funcstate.needs_refnanny = True
         code.putln("__Pyx_XDECREF_SET(%s, %s);" % (cname, rhs_cname))
 
     def _generate_decref(self, code, cname, nanny, null_check=False,
                     clear=False, clear_before_decref=False):
         prefix = '__Pyx' if nanny else 'Py'
         X = 'X' if null_check else ''
+
+        if nanny:
+            code.funcstate.needs_refnanny = True
 
         if clear:
             if clear_before_decref:
@@ -5426,6 +5437,17 @@ def cap_length(s, max_prefix=63, max_len=1024):
         return s
     hash_prefix = hashlib.sha256(s.encode('ascii')).hexdigest()[:6]
     return '%s__%s__etc' % (hash_prefix, s[:max_len-17])
+
+def write_noexcept_performance_hint(pos, function_name=None, void_return=False):
+    on_what = "on '%s' " % function_name if function_name else ""
+    msg = (
+        "Exception check %swill always require the GIL to be acquired. Possible solutions:\n"
+        "\t1. Declare the function as 'noexcept' if you control the definition and "
+                                "you're sure you don't want the function to raise exceptions.\n"
+    ) % on_what
+    if void_return:
+        msg += "\t2. Use an 'int' return type on the function to allow an error code to be returned."
+    performance_hint(pos, msg)
 
 def remove_cv_ref(tp, remove_fakeref=False):
     # named by analogy with c++ std::remove_cv_ref
