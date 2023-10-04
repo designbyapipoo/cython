@@ -165,7 +165,7 @@ def create_pipeline(context, mode, exclude_classes=()):
     from .Optimize import ConsolidateOverflowCheck
     from .Buffer import IntroduceBufferAuxiliaryVars
     from .ModuleNode import check_c_declarations, check_c_declarations_pxd
-
+    from .TypeStubGenerator import PyiWriter
 
     if mode == 'pxd':
         _check_c_declarations = check_c_declarations_pxd
@@ -183,6 +183,7 @@ def create_pipeline(context, mode, exclude_classes=()):
     # code in pxd files. So it will be run multiple times in a
     # compilation stage.
     stages = [
+        PyiWriter(),
         NormalizeTree(context),
         PostParse(context),
         _specific_post_parse,
