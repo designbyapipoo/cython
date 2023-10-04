@@ -1,11 +1,9 @@
-from .Compiler import Version
-from .Compiler.Nodes import *
-from .Compiler.ExprNodes import * 
-from .Compiler.ModuleNode import ModuleNode
-from .CodeWriter import LinesResult, DeclarationWriter
-from .Compiler.Visitor import PrintTree
-from .Compiler.AutoDocTransforms import ExpressionWriter, AnnotationWriter
-
+from Cython.Compiler import Version
+from Cython.Compiler.Nodes import *
+from Cython.Compiler.ExprNodes import * 
+from Cython.Compiler.ModuleNode import ModuleNode
+from Cython.CodeWriter import DeclarationWriter
+from Cython.Compiler.AutoDocTransforms import AnnotationWriter, ExpressionWriter
 import cython 
 
 cython.declare(PyrexTypes=object, Naming=object, ExprNodes=object, Nodes=object,
@@ -15,38 +13,25 @@ cython.declare(PyrexTypes=object, Naming=object, ExprNodes=object, Nodes=object,
 
 
 # Inspired by and based around https://github.com/cython/cython/pull/3818
-# with some less lazy changes to it and a few minor improvements and optimzations
-# Still needs a few more edits here and there but this is a start...
+# with some less lazy changes to it and a few minor improvements and optimzations...
 
-# TODO planning to implement typehint recovery systems in the future simillar to 
-# how Pylance for the VS code extension can do it for any type that is referred to as 
-# 'object' as it is too vauge to understand and is not helpful.
+# Decided to revert to an older variant I had wrote of this code for the sake of 
+# maintainability - Vizonex
 
 
-# FIXME I plan to make this a little bit more simillar to 
-# the Embedsignature Transform in the future but for now this will do...
 
-# FIXME I'm planning on dropping these different annotaions I have in the file if
-# they cannot be handled by earlier versions than 3.9 of python, 
-# they are currently just here to help me figure out how to write this all 
-# down since Im working inside of Vs Code.
+# TODO Save this implemenation commented out if required....
+# if sys.version_info >= (3, 9):
+#     typing_module = "typing"
+# else:
+#     typing_module = "typing_extensions"
 
-# TODO I am Planning to make tools to resolve missing return-types in the 
-# future as a feature for cython, it is currently missing and that's because 
-# it requires a few new and tricky to write visitor classes and it requires 
-# a lot of predicitions and a table of Pyrextypes with function names being 
-# the keys - Vizonex 
-
-# FIXME decorators are not being written and needs fixing - Vizonex
-
-# These Functions are temporarly inplace 
-# and I plan to optimize everything if required - Vizonex
-
-def ctype_name(arg, node:Node) -> str:
+def ctype_name(arg, node:"Node") -> str:
 
     # TODO Make a better conversion function...
     if arg.type and hasattr(arg.type, "name"):
         # Used C declared type...
+        # TODO see about using a check to see if users wants to include cython's shadow varaibales...
         return arg.type.name
         
     py_name = node.type.return_type.py_type_name() # type: ignore
@@ -60,15 +45,29 @@ def translate_annotations(node) -> list[str]:
     func_annotations = []
     for arg, py_arg in zip(node.type.args, node.declarator.args):
         annotation = ""
+        # TODO Maybe have a flag to check if were currently using 
+        # a class inside of here as an extra check?
         if arg.name == "self":
             annotation = arg.name
         else:
             annotation = "%s: %s" % (arg.name, ctype_name(arg, node))
         if not py_arg.default or not py_arg.default_value:
+            # TODO: See if there is a better way of going about finding an ellipsis...
             annotation += " = ..."
         func_annotations.append(annotation)
     return func_annotations
 
+
+# TODO Find something smarter than a variable stack, I'm not sure what it's original purpose was for - Vizonex
+
+# FIXME I plan to make this a little bit more simillar to 
+# the Embedsignature Transform in the future but for now this will do...
+
+
+# FIXME I'm planning on dropping these different annotaions I have in the file if
+# they cannot be handled by earlier versions than 3.9 of python... 
+# they are currently just here to help me figure out how to write this all 
+# down since Im working inside of Vs Code.
 
 
 
@@ -77,174 +76,119 @@ class PyiWriter(DeclarationWriter):
     this comes in handy for ides like Pylance 
     which suffer from having no code acess to 
     annotations from compiled python modules...
-
-
-    Currently borrows parts from the `EmbedSignature` to 
-    transform python functions off and it's other features 
-    are to help with formatting and translating the objects 
-    and annotations off as if the module directives said we would 
-    embed the signatures to python...
     """
 
-    indent_string = u"    "
-
-    def __init__(self, result=None):
-        super(PyiWriter, self).__init__()
-        if result is None:
-            result = LinesResult()
-        self.result = result
-        self.numindents = 0
-        self.current_directives = None
-        self.class_indentures = 0
-        self.need_typehints = False
-        self._next_is_static_method = False 
-        self.num_of_functions = 0
-
-    def write(self, tree):
-        self.visit(tree)
-        if isinstance(tree, ModuleNode):
-            self.current_directives = tree.directives
-        return self.result
-
-    def place_in_front(self, s):
-        self.result.lines = [s] + self.result.lines
-
-    def skiplines(self, n):
-        for _ in range(n):
-            self.endline()
-
-    def _fmt_annotation(self, node):
-        writer = AnnotationWriter()
-        result = writer.write(node)
-        return result
+    def __init__(self):
+        DeclarationWriter.__init__(self)
+        # TODO Maybe have arguments 
+        # for how shadow.pyi is implemented be passed into here 
+        # if we want them to be even imported at 
+        # all and if so C Variables should be translated as such...
     
-    def _fmt_expr(self, node):
-        writer = ExpressionWriter()
-        result = writer.write(node)
-        # print(type(node).__name__, '-->', result)
-        return result
+        # TODO in the future allow context variables to be passed so that a directive can be used to 
+        # pass along docstring infromation so tools such as sphinx can generate clean documentation...
+
+        self.translation_table:dict[str,str] = {}
+        """Used as an eternal resource for translating ctype declarations into python-types"""
+
+        self.use_typing : bool = False
+        """if true we must import typing's generator typehint..."""
+
 
     def _visitchildren_indented(self, node):
         self.indent()
         self.visitchildren(node)
         self.dedent()
     
-    # Reasons for using parts of Embedsignature should be simple to understand
-    # A: It's better than wiriting this all myself 
-    # B: Annotations and function signatures are translated and formatted 
-
-    # In the Future I plan to Merge Embedsignature and hack the internal structure 
-    # to force python directives to be used this pyiwriter to make it easier to maintain...
-
-    # It does not go all the way to _fmt_signature due to the nature or chance of a node 
-    # carrying an 'async' definition
-
-    def _fmt_arg(self, arg):
-        arg_doc = arg.name 
-        annotation = None
-        defaultval = None
+    def translate_pyrex_type(self, ctype:PyrexTypes.PyrexType):
+        # TODO implement Pyrex to cython shadow typehints converter...
         
-        if not arg.annotation:
-            annotation = self._fmt_type(arg.type)
+        if isinstance(ctype, PyrexTypes.CIntType):
+            return "int"
 
-        if arg.default:
-            defaultval = self._fmt_expr(arg.default)
+        elif isinstance(ctype, PyrexTypes.CFloatType):
+            return "float"
+    
+        elif isinstance(ctype,PyrexTypes.PyObjectType):
+            py_name = ctype.py_type_name()
+            if py_name:
+                # Try returning the python type name and put it into quotes 
+                # incase the object has not been registered yet....
+                return py_name if py_name in self.stack else f"{py_name!r}"
 
-        if annotation:
-            arg_doc = arg_doc + (': %s' % annotation)
-            if defaultval:
-                arg_doc = arg_doc + (' = %s' % defaultval)
-
-        elif defaultval:
-            arg_doc = arg_doc + ('=%s' % defaultval)
-
-        return arg_doc
-
-    def _fmt_type(self, type:PyrexTypes.PyrexType):
-        if type is PyrexTypes.py_object_type:
-            return None
-        annotation = None
-        if type.is_string:
-            annotation = self.current_directives['c_string_type']
-        elif type.is_numeric:
-            annotation = type.py_type_name()
-        if annotation is None:
-            code = type.declaration_code('', for_display=1)
-            annotation = code.replace(' ', '_').replace('*', 'p')
-        return annotation
-
-    def _fmt_arglist(self, args,
-                     npoargs=0, npargs=0, pargs=None,
-                     nkargs=0, kargs=None,
-                     hide_self=False):
-        arglist = []
-        for arg in args:
-            if not hide_self or not arg.entry.is_self_arg:
-                arg_doc = self._fmt_arg(arg)
-                arglist.append(arg_doc)
-        if pargs:
-            arg_doc = self._fmt_star_arg(pargs)
-            arglist.insert(npargs + npoargs, '*%s' % arg_doc)
-        elif nkargs:
-            arglist.insert(npargs + npoargs, '*')
-        if npoargs:
-            arglist.insert(npoargs, '/')
-        if kargs:
-            arg_doc = self._fmt_star_arg(kargs)
-            arglist.append('**%s' % arg_doc)
-        
-        return arglist
-
-    def _fmt_star_arg(self, arg):
-        arg_doc = arg.name
-        if arg.annotation:
-            annotation = self._fmt_annotation(arg.annotation)
-            arg_doc = arg_doc + (': %s' % annotation)
-        return arg_doc
+        return 'object'
 
 
-    def visit_ImportNode(self, node: ImportNode):
-        module_name:str = node.module_name.value
+    # Instead of doing it into C, we're doing it backwards...
+    def translate_base_type_to_py(
+        self,
+        base:CSimpleBaseTypeNode
+        ):
 
-        if not node.name_list:
-            self.putline("import %s" % module_name) 
-        else:
-            all_imported_children = ", ".join((arg.value for arg in node.name_list.args))
+        # Try checking our table first...
+        if self.translation_table.get(base.name):
+            return self.translation_table[base.name]
 
-            if node.level > 0:
-                module_name = "%s%s" % ("." * node.level , module_name)
-            self.putline("from %s import %s" % (module_name, all_imported_children))
-        return node
+        elif base.name == "object":
+            return "object"
 
+        elif base.name in ("unicode","basestring"):
+            return "str"
 
-    def visit_Node(self, node):
+        elif not base.is_basic_c_type:
+            # Likely that it's already a python object that's being handled...
+            # execpt for basestring and unicode...
+            return base.name 
+
+        elif base.name == "bint":
+            return "bool"
+
+        ctype = PyrexTypes.simple_c_type(base.signed, base.longness, base.name) # type: ignore
+        return self.translate_pyrex_type(ctype)
+
+    def emptyline(self):
+        self.result.putline("")
+
+    def visit_ModuleNode(self, node: ModuleNode):
+        # visit the children and start looking for anything usefull...
         self.visitchildren(node)
         return node 
-    
-    
-    def write_decorator(self, decorator):
-        if isinstance(decorator, CallNode):
-            # cython directive so it can be ignored... 
-            return
-        
-        self.startline("@")
-        if isinstance(decorator, NameNode):
 
-            self.endline("%s" % decorator.name)
-        else:
-            # TODO allow for multiple modules to stack on top of each other to form a path to the decorator required...
-            assert isinstance(decorator, AttributeNode) , "Decorator was not an attribute node..."
-            self.endline("%s.%s" % (decorator.obj.name,decorator.attribute))
+    def visit_CImportStatNode(self,node):
+        return node
+    
+    def visit_FromCImportStatNode(self,node):
+        return node
     
     def visit_CDefExternNode(self,node:CDefExternNode):
-        return node
-    
-    def skip_visitation(self, node):
-        return node
+        self.visitchildren(node)
 
-    visit_CImportStatNode = skip_visitation
-    visit_FromCImportStatNode = skip_visitation
+    def visit_CEnumDefNode(self, node:CEnumDefNode):
+        # TODO Figure out how to define an enum-class via typehints...
+
+        # NOTE It seems that only public will make the enum acessable to python so 
+        # I'll just have it check if the enums will be public for now... - Vizonex
+        if node.visibility == "public":
+            # Enum's name is not in or visable in the final product beacuse 
+            # it's not an enum class so do not indent here...
+            # Also Leave visit_CEnumDefItemNode up to the previous 
+            # class's function...
+            self.putline("# -- enum %s --" % node.name)
+            self.visitchildren(node)
+        return node 
+
+    # Used in our translation table to register return types variables from...
+    def visit_CTypeDefNode(self,node:CTypeDefNode):
+        if isinstance(node.declarator, CNameDeclaratorNode):
+            # Register a new type to use in our translation table...
+            self.translation_table[node.declarator.name] = self.translate_base_type_to_py(node.base_type)
     
+    def visit_CStructOrUnionDefNode(self, node:CStructOrUnionDefNode):
+        # XXX : Currenlty, I don't know what to do here yet but ignoring 
+        # is triggering some problems currently...
+        return node
+        
+
     def visit_CVarDefNode(self, node: CVarDefNode):
 
         # if they aren't public or readonly then the variable inside of a class 
@@ -256,16 +200,36 @@ class PyiWriter(DeclarationWriter):
             # new type-registry system to help translate 
             # all incomming variables... 
 
-            py_name = self._fmt_type(node.base_type)
+            py_name = self.translate_base_type_to_py(node.base_type)
             
             # Final check...
             if py_name is not None:
                 # Write in all the objects listed on the defined line...
                 for d in node.declarators:
                     self.putline("%s: %s" % (d.name, py_name))
-                    
-        return node
     
+        return node
+
+
+    
+
+
+    def visit_ImportNode(self, node: ImportNode):
+        module_name = node.module_name.value
+
+        if not node.name_list:
+            self.putline("import %s" % module_name) 
+        else:
+            all_imported_children = ", ".join((arg.value for arg in node.name_list.args))
+
+            if node.level > 0:
+                module_name = "%s%s" % ("." * node.level , module_name)
+
+            self.putline("from %s import %s" % (module_name, all_imported_children))
+
+        return node
+
+
     def visit_SingleAssignmentNode(self, node: SingleAssignmentNode): # type: ignore
         if not isinstance(node.rhs, ImportNode):
             return node
@@ -287,121 +251,176 @@ class PyiWriter(DeclarationWriter):
 
         self.putline("import %s as %s" % (module_name, imported_name))
         return node 
-
-    def visit_DefNode(self, node:DefNode):
-        # TODO Track for staticmethod decorators...
-        if node.decorators is not None:
-            for decorator in node.decorators:
-                print(decorator.__dict__)
-                self.write_decorator(decorator.decorator)
-
-        self.startline()
-        if node.is_async_def or hasattr(node, "is_coroutine") and node.is_coroutine is True:
-            self.put("async ")
-        
-        func_name = node.name
-
-        if func_name == '__cinit__':
-            func_name = '__init__'
-
-        self.put("def %s(" % func_name)
-
-        # Now we go into a simillar phase as embedsignature 
-        # to write down our arguments and annotation arguments 
-        # as well as any declared variables
-        npoargs = getattr(node, 'num_posonly_args', 0)
-        nkargs = getattr(node, 'num_kwonly_args', 0)
-        npargs = len(node.args) - nkargs - npoargs
-
-        result_args = self._fmt_arglist(
-            node.args, 
-            npoargs, 
-            npargs, 
-            node.star_arg, 
-            nkargs, 
-            node.starstar_arg,
-            hide_self=self.class_indentures < 1)
-        
-        self.put(", ".join(result_args))
-
-        # TODO Add A Return Type Recovery tool to resolve all 
-        # missing return type annotations from functions being called and returned...
-        return_type = getattr(node, "return_type_annotation", None)
-
-        if return_type is not None:
-            annotation = self._fmt_annotation(return_type)
-            if (node.is_generator and not annotation.startswith("Generator")):
-                # TODO figure out how the extract the other two required variables...
-                # Also the function could be an Iterator but 
-                # hadn't added the "__iter__" function name-check just yet...
-
-                # Typehints are now required to be imported at beginning of the pyi stub 
-                # for the sake of readabiluty
-                self.need_typehints = True
-                self.put(") -> Genertor[ %s, None, None]:..." % annotation)
-            else:
-                self.put(") -> %s:..." % annotation)
-        else:
-            # Unknown Annotations can sitll be recoverable via returnStatNode...
-            # TODO Recover entries and returntypes if python objects are found...
-            self.put("):...")
-        # Move by 2 lines down...
-        self.skiplines(2)
-        return node
     
-    
-    def visit_ClassDefNode(self, node:ClassDefNode):
-    
-        try:
-            # PyClassDefNode
-            class_name = node.name
-        except AttributeError:
-            # CClassDefNode
-            class_name = node.class_name
+    # Optimized orginal code by having there be one function to take 
+    # the place of two of them I could see what Scoder meant when 
+    # said the orginal pull request needed to be cleaned up...
 
-        self.startline("class %s" % class_name)
+    def write_class(self, node, class_name):
+        self.put("class %s" % class_name)
         if getattr(node,"bases",None) and isinstance(node.bases, TupleNode):
-            self.put("(" + ",".join([name.name for name in node.bases.args]) + ")")
-    
-        self.endline(":")
-        # Track class recursions so we know if the function may have a self argument inplace...
-        self.class_indentures += 1
-        
-        if node.body.stats:
-            self._visitchildren_indented(node)
+            self.put("(")
+            self.put(",".join([name.name for name in node.bases.args]))
+            self.endline("):")
         else:
-            self.indent()
-            self.putline("pass")
-            self.dedent()
-            self.skiplines(1)
-        self.class_indentures -= 1
+            self.put(":")
+        self._visitchildren_indented(node)
+        self.emptyline()
         return node 
     
-    def visit_CFuncDefNode(self, node:CFuncDefNode):
-        # cdef functions are not allowed and should be skipped...
+    # I have tried to merege these before via visit_ClassDefNode but it causes the system to break so this 
+    # was the best I could do to minigate the problem - Vizonex 
+    def visit_CClassDefNode(self, node: CClassDefNode):
+        return self.write_class(node, node.class_name)
+
+    def visit_PyClassDefNode(self, node:PyClassDefNode):
+        return self.write_class(node, node.name)
+
+    def visit_CFuncDefNode(self, node: CFuncDefNode):
+        # cdefs are for C only...
         if not node.overridable:
-            return node
-        
+            return node 
+
         func_name = node.declared_name()
 
         self.startline()
         self.put("def %s(" % func_name)
-
+        # Cleaned up alot of what the orginal author did by making a new function
         self.put(", ".join(translate_annotations(node)))
+        # TODO Maybe Try passing docstrings in the future for vscode users' sake
+        # or have it also be a compiler argument?...
+        self.endline(") -> %s: ..." % ctype_name(node.type.return_type))
+        return node
 
-        _type = self._fmt_type(node.type.return_type)
+    def print_Decorator(self, decorator):
+        if isinstance(decorator, CallNode):
+            return
+        
+        self.startline("@")
+        if isinstance(decorator, NameNode):
+            self.endline("%s" % decorator.name)
+        else:
+            assert isinstance(decorator, AttributeNode) , "Decorator was not an attribute node..."
+            self.endline("%s.%s" % (decorator.obj.name,decorator.attribute))
+        
 
-        self.endline((") -> %s: ..." % _type) if _type else "):...")
+    def annotation_Str(self, annotation:ExprNode) -> str:
+        return annotation.name if hasattr(annotation,"name") and annotation.is_name else  annotation.string.unicode_value 
+        
+     
 
+    def visit_DefNode(self,node:DefNode):
+        func_name = node.name
+
+        # TODO Change how init is being handled...
+        if func_name == '__cinit__':
+            func_name = '__init__'
+        
+        def argument_str(arg:CArgDeclNode):
+            value = arg.declarator.name
+
+            if arg.annotation is not None:
+                value += (": %s" % self.annotation_Str(arg.annotation))
+
+            elif hasattr(arg.base_type,"name") and arg.base_type.name is not None:
+                value += ": %s" % self.translate_base_type_to_py(arg.base_type)
+                
+            if (arg.default is not None or
+                arg.default_value is not None):
+                value += " = ..."
+
+            return value
+        
+        # TODO See if "*," or "/," or an "Ellipsis" 
+        # can be passed through and accepted into all the stub 
+        # files with a regex to check it off as a unittest.
+        
+        async_name = "async " if node.is_async_def or getattr(node,"is_coroutine", None) else ""
+
+        if node.decorators is not None:
+            for decorator in node.decorators:
+                self.print_Decorator(decorator.decorator)
+
+        self.startline("%sdef %s(" % (async_name, func_name))
+
+        # TODO Maybe look into trying AutoDocTransforms?
+
+        args_list = []
+        
+        # Ordinary arguments:
+        args_list += (argument_str(arg) for arg in node.args)
+
+        # extra postional and keyword arguments:
+        star_arg = node.star_arg
+        starstar_arg = node.starstar_arg
+        
+        # Calculations of Postion or Keyword only arguments 
+        # Implementation from EmbedSignature
+
+        npoargs = getattr(node, 'num_posonly_args', 0)
+        nkargs = getattr(node, 'num_kwonly_args', 0)
+        npargs = len(node.args) - nkargs - npoargs
+        
+        if star_arg is not None:
+            
+            args_list.insert(npargs + npoargs, "*%s" % star_arg.name)
+        
+        elif nkargs:
+            args_list.insert(npargs + npoargs, '*')
+        
+        if npoargs:
+            args_list.insert(npoargs,'/')
+
+        if starstar_arg is not None:
+            args_list.append("**%s" % starstar_arg.name)
+
+        self.put(", ".join(args_list))
+
+        retype = node.return_type_annotation
+
+        if retype is not None:
+            
+            # This is a little bit different than the original pull request 
+            # since I wanted there to be propper typehints given to all the 
+            # objects which is why I added the "Generator" as a typehint & keyword...
+
+            annotation = self.annotation_Str(retype)
+            if (node.is_generator and not annotation.startswith("Generator")):
+                # TODO figure out how the extract the other two required variables...
+                # Also the function could be an Iterator but 
+                # hadn't added the "__iter__" function name-check just yet...
+                self.use_typing = True
+                self.put(") -> Genertor[ %s, None, None]:..." % annotation)
+            else:
+                self.put(") -> %s: ..." % annotation)
+
+        # TODO Add Return Type Recovery tool to resolve all missing annotations...
+        else:
+            self.put("): ...")
+        self.endline()
+
+
+
+    def visit_ExprNode(self,node:ExprNode):
         return node 
-    
+        
+    def visit_SingleAssignmentNode(self,node:SingleAssignmentNode):
+        if isinstance(node.rhs, ImportNode):
+            self.visitchildren(node)
+            return node
+        
+        name = node.lhs.name
+        if node.lhs.annotation:
+            # TODO Check if the annotation's values are existant...
+            self.putline("%s : %s = ..." % (name, node.lhs.annotation.string.value))
+        else:
+            self.putline("%s : %s" % (name, self.translate_pyrex_type(node.rhs.type)))
+
     def visit_NameNode(self, node:NameNode):
         return node
 
     def visit_ExprStatNode(self,node:ExprStatNode):
         if isinstance(node.expr, NameNode):
-            # self.set_Stack_As_Occupied()
-
             expr = node.expr
             name = expr.name # type: ignore
             if expr.annotation:
@@ -409,23 +428,35 @@ class PyiWriter(DeclarationWriter):
             else:
                 self.putline("%s " % name)
         return node 
-    # needed here otherwise this will completely break the current compiler...
-    visit_CClassDefNode = visit_ClassDefNode
+
+
+
+    def visit_Node(self, node:Node):
+        self.visitchildren(node)
+        return node
+
+    def putline_at(self,index, line):
+        self.result.lines.insert(index, line)
 
     def write(self, root:Node, _debug:bool = False):
         # Top Notice will likely chage once I've made a full on pull request...
         self.putline("# Python stub file generated by Cython %s" % Version.watermark)
-        self.endline()
+        self.emptyline()
 
-        if isinstance(root, ModuleNode):
-            self.current_directives = root.directives
+        self.visit(root)
+        if self.use_typing:
+            # Inject Keyword Generator
+            self.putline_at(1, "from typing import Generator")
 
-        self.visitchildren(root)
-
-        # Added a new debugger incase needed for now...
+        # added a new debugger incase needed for now...
         if _debug:
             print("# -- Pyi Result --")
             print("\n".join(self.result.lines))
             print("# -- End Of Pyi Result --")
 
         return self.result
+
+  
+    
+
+   
