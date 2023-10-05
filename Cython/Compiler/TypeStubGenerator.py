@@ -1,10 +1,9 @@
-from .Compiler import Version
-from .Compiler.Nodes import CNameDeclaratorNode
-from .Compiler.ExprNodes import CallNode, NameNode, ImportNode, TupleNode, AttributeNode
-from .CodeWriter import DeclarationWriter
-from .Compiler.ParseTreeTransforms import CythonTransform
-from .Compiler import PyrexTypes
-from .Compiler.Main import Context
+from . import Version
+from .Nodes import CNameDeclaratorNode
+from .ExprNodes import CallNode, NameNode, ImportNode, TupleNode, AttributeNode
+from ..CodeWriter import DeclarationWriter
+from .ParseTreeTransforms import CythonTransform
+from . import PyrexTypes
 from .Utils import open_new_file
 import cython 
 import os 
