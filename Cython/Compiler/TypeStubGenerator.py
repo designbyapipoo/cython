@@ -38,7 +38,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
     annotations from compiled python modules...
     """
 
-    def __init__(self, context:Context):
+    def __init__(self, context):
         super(PyiWriter, self).__init__(context=context)
         super(DeclarationWriter, self).__init__()
         self.context = context
