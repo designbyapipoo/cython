@@ -228,29 +228,6 @@ class PyiWriter(CythonTransform, DeclarationWriter):
 
         return node
 
-
-    def visit_SingleAssignmentNode(self, node):
-        if not isinstance(node.rhs, ImportNode):
-            return node
-
-        module_name = node.rhs.module_name.value
-
-        parent_module = module_name
-
-        pos = module_name.find('.')
-
-        if pos != -1:
-            parent_module = module_name[:pos]
-        
-        imported_name = node.lhs.name
-
-        if parent_module == imported_name:
-            self.visitchildren(node)
-            return node
-
-        self.putline("import %s as %s" % (module_name, imported_name))
-        return node 
-    
     # Optimized orginal code by having there be one function to take 
     # the place of two of them I could see what Scoder meant when 
     # said the orginal pull request needed to be cleaned up...
