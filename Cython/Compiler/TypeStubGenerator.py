@@ -146,7 +146,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         # We need to extract the name to write our pyi file down...
         if node.directives['write_stub_file']:
             result = self.write(node, True)
-            print("writing file %s.pyi ..." % result)
+            print("writing file %s.pyi ..." % node.full_module_name)
             with open_new_file(os.path.join(node.full_module_name + '.pyi')) as w:
                 w.write("\n".join(result.lines))
             print("pyi file written")
