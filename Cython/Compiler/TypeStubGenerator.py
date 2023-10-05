@@ -38,9 +38,9 @@ def ctype_name(arg, node):
         # TODO see about using a check to see if users wants to include cython's shadow varaibales...
         return arg.type.name
         
-    py_name = node.type.return_type.py_type_name() # type: ignore
-    if "(int, long)" == py_name:
-        return "int"
+    py_name = node.type.return_type.py_type_name()
+    # if "(int, long)" == py_name:
+    #     return "int"
     
     return py_name
 
