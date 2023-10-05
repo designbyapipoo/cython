@@ -58,19 +58,6 @@ def translate_annotations(node):
     return func_annotations
 
 
-# TODO Find something smarter than a variable stack, I'm not sure what it's original purpose was for - Vizonex
-
-# FIXME I plan to make this a little bit more similar to 
-# the Embedsignature Transform in the future but for now this will do...
-
-
-# FIXME I'm planning on dropping these different annotaions I have in the file if
-# they cannot be handled by earlier versions than 3.9 of python... 
-# they are currently just here to help me figure out how to write this all 
-# down since Im working inside of Vs Code.
-
-
-
 class PyiWriter(CythonTransform, DeclarationWriter):
     """Used By Cython to help Write stubfiles
     this comes in handy for ides like Pylance 
