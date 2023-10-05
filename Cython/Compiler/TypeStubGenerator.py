@@ -22,6 +22,12 @@ cython.declare(PyrexTypes=object, Naming=object, ExprNodes=object, Nodes=object,
 # Decided to revert to an older variant I had wrote of this code for the sake of 
 # maintainability - Vizonex
 
+# TODO Save this implemenation commented out if required....
+if sys.version_info >= (3, 9):
+    typing_module = "typing"
+else:
+    typing_module = "typing_extensions"
+
 
 def ctype_name(arg, node:"Node"):
 
