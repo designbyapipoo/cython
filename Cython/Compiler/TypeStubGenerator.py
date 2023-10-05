@@ -109,16 +109,16 @@ class PyiWriter(CythonTransform, DeclarationWriter):
 
     def emptyline(self):
         self.result.putline("")
-
+    
     def visit_ModuleNode(self, node):
         # We need to extract the name to write our pyi file down...
         if node.directives['write_stub_file']:
             result = self.write(node, True)
+            new_path = node.full_module_name.replace(".", "/")
             print("writing file %s.pyi ..." % node.full_module_name)
-            with open_new_file(os.path.join(node.full_module_name + '.pyi')) as w:
+            with open_new_file(os.path.join(new_path + '.pyi')) as w:
                 w.write("\n".join(result.lines))
                 w.write("\n")
-            print("pyi file written")
         return node
         
 
