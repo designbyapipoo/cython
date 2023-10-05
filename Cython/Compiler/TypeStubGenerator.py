@@ -59,16 +59,24 @@ class PyiWriter(CythonTransform, DeclarationWriter):
     
     def translate_pyrex_type(self, ctype):
         # TODO implement Pyrex to cython shadow typehints converter...
+
+        if isinstance(ctype, PyrexTypes.BuiltinObjectType):
+            return ctype.py_type_name()
+
+        if isinstance(ctype, PyrexTypes.CVoidType):
+            if ctype.is_ptr:
+                return "object"
+            return "None"
         
         if isinstance(ctype, PyrexTypes.CIntType):
             return "int"
 
         elif isinstance(ctype, PyrexTypes.CFloatType):
             return "float"
-    
+
         elif isinstance(ctype,PyrexTypes.PyObjectType):
             return ctype.py_type_name()
-            
+        
         return 'object'
 
 
