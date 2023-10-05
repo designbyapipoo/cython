@@ -30,32 +30,6 @@ if sys.version_info >= (3, 9):
 else:
     typing_module = "typing_extensions"
 
-def ctype_name(arg, node):
-
-    # TODO Make a better conversion function...
-    if arg.type and hasattr(arg.type, "name"):
-        # Used C declared type...
-        # TODO see about using a check to see if users wants to include cython's shadow varaibales...
-        return arg.type.name
-        
-    py_name = node.type.return_type.py_type_name()
-    # if "(int, long)" == py_name:
-    #     return "int"
-    
-    return py_name
-
-
-def translate_annotations(node):
-    func_annotations = []
-    for arg, py_arg in zip(node.type.args, node.declarator.args):
-        # TODO Maybe have a flag to check if were currently using 
-        # a class inside of here as an extra check?
-        annotation = "%s: %s" % (arg.name, ctype_name(arg, node))
-        if not py_arg.default or not py_arg.default_value:
-            # TODO: See if there is a better way of going about finding an ellipsis...
-            annotation += " = ..."
-        func_annotations.append(annotation)
-    return func_annotations
 
 
 class PyiWriter(CythonTransform, DeclarationWriter):
@@ -253,19 +227,34 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         # cdefs are for C only...
         if not node.overridable:
             return node 
-
+        
+        func_args = []
+        for arg in node.declarator.args:
+            value = ""
+            if not arg.declarator.name:
+                value = arg.base_type.name
+            elif hasattr(arg.base_type, "name"):
+                value = "%s : %s" % (arg.declarator.name, self.translate_base_type_to_py(arg.base_type))
+            if (arg.default is not None or
+                arg.default_value is not None):
+                value += " = ..."
+            func_args.append(value)
+        
         self.class_func_count += 1
-
+        
         func_name = node.declared_name()
-
         self.startline()
         self.put("def %s(" % func_name)
-        # Cleaned up a lot of what the orginal author did by making a new function
-        self.put(", ".join(translate_annotations(node)))
+    
+        self.put(", ".join(func_args))
+        
         # TODO Maybe Try passing docstrings in the future for vscode users' sake
         # or have it also be a compiler argument?...
-        self.endline(") -> %s: ..." % ctype_name(node.type.return_type))
+      
+        self.endline(") -> %s: ..." % self.translate_base_type_to_py(node.base_type))
+        
         return node
+
 
     def print_Decorator(self, decorator):
         if isinstance(decorator, CallNode):
