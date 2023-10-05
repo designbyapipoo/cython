@@ -24,7 +24,7 @@ cython.declare(PyrexTypes=object, Naming=object, ExprNodes=object, Nodes=object,
 
 
 
-# TODO Save this implemenation commented out if required....
+# TODO Save this implementation commented out if required....
 if sys.version_info >= (3, 9):
     typing_module = "typing"
 else:
