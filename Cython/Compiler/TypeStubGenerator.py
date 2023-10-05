@@ -107,12 +107,8 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             return "float"
     
         elif isinstance(ctype,PyrexTypes.PyObjectType):
-            py_name = ctype.py_type_name()
-            if py_name:
-                # Try returning the python type name and put it into quotes 
-                # in case the object has not been registered yet....
-                return py_name if py_name in self.stack else "\"%s\"" % py_name
-
+            return ctype.py_type_name()
+            
         return 'object'
 
 
