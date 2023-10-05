@@ -109,6 +109,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             print("writing file %s.pyi ..." % node.full_module_name)
             with open_new_file(os.path.join(node.full_module_name + '.pyi')) as w:
                 w.write("\n".join(result.lines))
+                w.write("\n")
             print("pyi file written")
         return node
         
