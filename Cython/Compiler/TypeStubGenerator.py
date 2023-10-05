@@ -148,6 +148,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
     
     def visit_CDefExternNode(self,node):
         self.visitchildren(node)
+        return node 
 
     def visit_CEnumDefNode(self, node):
         # TODO Figure out how to define an enum-class via typehints...
@@ -371,8 +372,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         else:
             self.put("): ...")
         self.endline()
-
-
+        return node
 
     def visit_ExprNode(self,node):
         return node 
@@ -386,8 +386,11 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         if node.lhs.annotation:
             # TODO Check if the annotation's values are existent...
             self.putline("%s : %s = ..." % (name, node.lhs.annotation.string.value))
-        else:
+        elif hasattr(node, "rhs"):
             self.putline("%s : %s" % (name, self.translate_pyrex_type(node.rhs.type)))
+        else:
+            self.putline(name)
+        return node 
 
     def visit_NameNode(self, node):
         return node
