@@ -220,15 +220,15 @@ class PyiWriter(CythonTransform, DeclarationWriter):
     # the place of two of them I could see what Scoder meant when 
     # said the orginal pull request needed to be cleaned up...
 
+    
     def write_class(self, node, class_name):
-        print(node.__dict__)
         self.put("class %s" % class_name)
-        if getattr(node,"bases",None) and isinstance(node.bases, TupleNode):
+        if getattr(node,"bases",None) and isinstance(node.bases, TupleNode) and node.bases.args:
             self.put("(")
             self.put(",".join([name.name for name in node.bases.args]))
             self.endline("):")
         else:
-            self.put(":")
+            self.endline(":")
 
         self.class_func_count = 0
         self._visitchildren_indented(node)
