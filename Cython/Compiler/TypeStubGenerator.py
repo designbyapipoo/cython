@@ -17,20 +17,25 @@ cython.declare(PyrexTypes=object, Naming=object, ExprNodes=object, Nodes=object,
 
 
 # Inspired by and based around https://github.com/cython/cython/pull/3818
-# with some less lazy changes to it and a few minor improvements and optimzations...
+# with some less lazy changes to it and a few minor improvements and optimizations...
 
 # Decided to revert to an older variant I had wrote of this code for the sake of 
 # maintainability - Vizonex
 
+
+
+# TODO Save this implemenation commented out if required....
 if sys.version_info >= (3, 9):
     typing_module = "typing"
 else:
     typing_module = "typing_extensions"
 
 def ctype_name(arg, node):
+
     # TODO Make a better conversion function...
     if arg.type and hasattr(arg.type, "name"):
         # Used C declared type...
+        # TODO see about using a check to see if users wants to include cython's shadow varaibales...
         return arg.type.name
         
     py_name = node.type.return_type.py_type_name() # type: ignore
@@ -56,6 +61,19 @@ def translate_annotations(node):
     return func_annotations
 
 
+# TODO Find something smarter than a variable stack, I'm not sure what it's original purpose was for - Vizonex
+
+# FIXME I plan to make this a little bit more similar to 
+# the Embedsignature Transform in the future but for now this will do...
+
+
+# FIXME I'm planning on dropping these different annotaions I have in the file if
+# they cannot be handled by earlier versions than 3.9 of python... 
+# they are currently just here to help me figure out how to write this all 
+# down since Im working inside of Vs Code.
+
+
+
 class PyiWriter(CythonTransform, DeclarationWriter):
     """Used By Cython to help Write stubfiles
     this comes in handy for ides like Pylance 
@@ -69,13 +87,6 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         self.context = context
         self.module_name = ""
         self.class_func_count = 0 
-        # TODO Maybe have arguments 
-        # for how shadow.pyi is implemented be passed into here 
-        # if we want them to be even imported at 
-        # all and if so C Variables should be translated as such...
-    
-        # TODO in the future allow context variables to be passed so that a directive can be used to 
-        # pass along docstring infromation so tools such as sphinx can generate clean documentation...
 
         self.translation_table = {}
         """Used as an eternal resource for translating ctype declarations into python-types"""
@@ -102,7 +113,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             py_name = ctype.py_type_name()
             if py_name:
                 # Try returning the python type name and put it into quotes 
-                # incase the object has not been registered yet....
+                # in case the object has not been registered yet....
                 return py_name if py_name in self.stack else "\"%s\"" % py_name
 
         return 'object'
@@ -126,7 +137,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
 
         elif not base.is_basic_c_type:
             # Likely that it's already a python object that's being handled...
-            # execpt for basestring and unicode...
+            # except for basestring and unicode...
             return base.name 
 
         elif base.name == "bint":
@@ -161,10 +172,10 @@ class PyiWriter(CythonTransform, DeclarationWriter):
     def visit_CEnumDefNode(self, node):
         # TODO Figure out how to define an enum-class via typehints...
 
-        # NOTE It seems that only public will make the enum acessable to python so 
+        # NOTE It seems that only public will make the enum accessible to python so 
         # I'll just have it check if the enums will be public for now... - Vizonex
         if node.visibility == "public":
-            # Enum's name is not in or visable in the final product beacuse 
+            # Enum's name is not in or visible in the final product because 
             # it's not an enum class so do not indent here...
             # Also Leave visit_CEnumDefItemNode up to the previous 
             # class's function...
@@ -179,7 +190,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             self.translation_table[node.declarator.name] = self.translate_base_type_to_py(node.base_type)
     
     def visit_CStructOrUnionDefNode(self, node):
-        # XXX : Currenlty, I don't know what to do here yet but ignoring 
+        # XXX : Currently, I don't know what to do here yet but ignoring 
         # is triggering some problems currently...
         return node
         
@@ -187,13 +198,13 @@ class PyiWriter(CythonTransform, DeclarationWriter):
     def visit_CVarDefNode(self, node):
 
         # if they aren't public or readonly then the variable inside of a class 
-        # or outisde should be ignored by default...
+        # or outside should be ignored by default...
 
         if node.visibility in ["readonly", "public"]:
 
             # TODO handle ctypedef nodes and give them a 
             # new type-registry system to help translate 
-            # all incomming variables... 
+            # all incoming variables... 
 
             py_name = self.translate_base_type_to_py(node.base_type)
             
@@ -291,8 +302,10 @@ class PyiWriter(CythonTransform, DeclarationWriter):
 
         self.startline()
         self.put("def %s(" % func_name)
-        # Cleaned up alot of what the orginal author did by making a new function
+        # Cleaned up a lot of what the orginal author did by making a new function
         self.put(", ".join(translate_annotations(node)))
+        # TODO Maybe Try passing docstrings in the future for vscode users' sake
+        # or have it also be a compiler argument?...
         self.endline(") -> %s: ..." % ctype_name(node.type.return_type))
         return node
 
@@ -355,7 +368,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         # Ordinary arguments:
         args_list += (argument_str(arg) for arg in node.args)
 
-        # extra postional and keyword arguments:
+        # extra positional and keyword arguments:
         star_arg = node.star_arg
         starstar_arg = node.starstar_arg
         
@@ -388,13 +401,12 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             # objects which is why I added the "Generator" as a typehint & keyword...
 
             annotation = self.annotation_Str(retype)
-            # TODO Maybe get rid of this feature all together and let the user make the return typehints?
             if (node.is_generator and not annotation.startswith("Generator")):
                 # TODO figure out how the extract the other two required variables...
                 # Also the function could be an Iterator but 
                 # hadn't added the "__iter__" function name-check just yet...
                 self.use_typing = True
-                self.put(") -> Genertor[ %s, None, None]:..." % annotation)
+                self.put(") -> Generator[ %s, None, None]:..." % annotation)
             else:
                 self.put(") -> %s: ..." % annotation)
 
@@ -415,7 +427,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         
         name = node.lhs.name
         if node.lhs.annotation:
-            # TODO Check if the annotation's values are existant...
+            # TODO Check if the annotation's values are existent...
             self.putline("%s : %s = ..." % (name, node.lhs.annotation.string.value))
         else:
             self.putline("%s : %s" % (name, self.translate_pyrex_type(node.rhs.type)))
@@ -441,15 +453,14 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         self.result.lines.insert(index, line)
 
     def write(self, root, _debug = False):
-        # Top Notice will likely chage once I've made a full on pull request...
+        # Top Notice will likely change once I've made a full on pull request...
         self.putline("# Python stub file generated by Cython %s" % Version.watermark)
         self.emptyline()
 
         self.visitchildren(root)
         if self.use_typing:
             # Inject Keyword Generator
-            # Todo Use what was commented out 
-            self.putline_at(1, "from %s import Generator" % typing_module)
+            self.putline_at(1, "from typing import Generator")
 
         # added a new debugger incase needed for now...
         if _debug:
@@ -458,3 +469,8 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             print("# -- End Of Pyi Result --")
 
         return self.result
+
+  
+
+
+   
