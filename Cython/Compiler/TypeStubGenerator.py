@@ -4,7 +4,7 @@ from .ExprNodes import CallNode, NameNode, ImportNode, TupleNode, AttributeNode
 from ..CodeWriter import DeclarationWriter
 from .ParseTreeTransforms import CythonTransform
 from . import PyrexTypes
-from .Utils import open_new_file
+from ..Utils import open_new_file
 import cython 
 import os 
 import sys 
