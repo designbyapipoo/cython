@@ -263,8 +263,8 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         
         return node
 
-
-    def print_Decorator(self, decorator):
+    
+    def write_decorator(self, decorator):
         if isinstance(decorator, CallNode):
             return
         
@@ -312,7 +312,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
 
         if node.decorators is not None:
             for decorator in node.decorators:
-                self.print_Decorator(decorator.decorator)
+                self.write_decorator(decorator.decorator)
 
         self.startline("%sdef %s(" % (async_name, func_name))
 
@@ -352,8 +352,8 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         if retype is not None:
             
             # This is a little bit different than the original pull request 
-            # since I wanted there to be propper typehints given to all the 
-            # objects which is why I added the "Generator" as a typehint & keyword...
+            # since I wanted there to be better typehints given to all the 
+            # objects hence why I added "Generator" as a typehint & keyword...
 
             annotation = self.annotation_Str(retype)
             if (node.is_generator and not annotation.startswith("Generator")):
