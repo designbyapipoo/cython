@@ -1,40 +1,8 @@
-from . import Version
-from .Nodes import CNameDeclaratorNode
-from .ExprNodes import CallNode, NameNode, ImportNode, TupleNode, AttributeNode
-from ..CodeWriter import DeclarationWriter
-from .Visitor import CythonTransform
-from . import PyrexTypes
-from ..Utils import open_new_file
-import cython 
-import os 
-import sys 
-
-cython.declare(PyrexTypes=object, Naming=object, ExprNodes=object, Nodes=object,
-               Options=object, UtilNodes=object, LetNode=object,
-               LetRefNode=object, TreeFragment=object, EncodedString=object,
-               error=object, warning=object, copy=object, _unicode=object)
-
-
-# Inspired by and based around https://github.com/cython/cython/pull/3818
-# with some less lazy changes to it and a few minor improvements and optimizations...
-
-# Decided to revert to an older variant I had wrote of this code for the sake of 
-# maintainability - Vizonex
-
-
-
-# TODO Save this implementation commented out if required....
-if sys.version_info >= (3, 9):
-    typing_module = "typing"
-else:
-    typing_module = "typing_extensions"
-
-
 
 class PyiWriter(CythonTransform, DeclarationWriter):
     """Used By Cython to help Write stubfiles
     this comes in handy for ides like Pylance 
-    which suffer from having no code acess to 
+    which suffer from having no code access to 
     annotations from compiled python modules...
     """
 
@@ -201,12 +169,13 @@ class PyiWriter(CythonTransform, DeclarationWriter):
 
         return node
 
-    # Optimized orginal code by having there be one function to take 
+    # Optimized original code by having there be one function to take 
     # the place of two of them I could see what Scoder meant when 
-    # said the orginal pull request needed to be cleaned up...
+    # said the original pull request needed to be cleaned up...
 
     
     def write_class(self, node, class_name):
+        self.endline()
         self.put("class %s" % class_name)
         if getattr(node,"bases",None) and isinstance(node.bases, TupleNode) and node.bases.args:
             self.put("(")
@@ -214,7 +183,6 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             self.endline("):")
         else:
             self.endline(":")
-
         self.class_func_count = 0
         self._visitchildren_indented(node)
         if self.class_func_count < 1:
@@ -222,7 +190,6 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             self.putline("pass")
             self.dedent()
         self.class_func_count = 0
-
         self.emptyline()
         return node 
     
@@ -422,7 +389,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             # Inject Keyword Generator
             self.putline_at(1, "from typing import Generator")
 
-        # added a new debugger incase needed for now...
+        # added a new debugger in case needed for now...
         if _debug:
             print("# -- Pyi Result --")
             print("\n".join(self.result.lines))
