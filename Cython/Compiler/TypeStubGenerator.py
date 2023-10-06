@@ -2,7 +2,7 @@ from . import Version
 from .Nodes import CNameDeclaratorNode
 from .ExprNodes import CallNode, NameNode, ImportNode, TupleNode, AttributeNode
 from ..CodeWriter import DeclarationWriter
-from .ParseTreeTransforms import CythonTransform
+from .Visitor import CythonTransform
 from . import PyrexTypes
 from ..Utils import open_new_file
 import cython 
