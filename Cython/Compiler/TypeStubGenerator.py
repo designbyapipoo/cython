@@ -120,7 +120,10 @@ class PyiWriter(CythonTransform, DeclarationWriter):
                 w.write("\n".join(result.lines))
                 w.write("\n")
         return node
-        
+
+    def visit_StatListNode(self, node):
+        self.visitchildren(node)
+        return node
 
     def visit_CImportStatNode(self,node):
         return node
