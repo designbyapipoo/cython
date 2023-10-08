@@ -1,3 +1,33 @@
+from . import Version
+from .Nodes import CNameDeclaratorNode
+from .ExprNodes import CallNode, NameNode, ImportNode, TupleNode, AttributeNode
+from ..CodeWriter import DeclarationWriter
+from .Visitor import CythonTransform
+from . import PyrexTypes
+from ..Utils import open_new_file
+import cython 
+import os 
+import sys 
+
+cython.declare(PyrexTypes=object, Naming=object, ExprNodes=object, Nodes=object,
+               Options=object, UtilNodes=object, LetNode=object,
+               LetRefNode=object, TreeFragment=object, EncodedString=object,
+               error=object, warning=object, copy=object, _unicode=object)
+
+
+# Inspired by and based around https://github.com/cython/cython/pull/3818
+# with some less lazy changes to it and a few minor improvements and optimizations...
+
+# Decided to revert to an older variant I had wrote of this code for the sake of 
+# maintainability - Vizonex
+
+
+
+# TODO Save this implementation commented out if required....
+if sys.version_info >= (3, 9):
+    typing_module = "typing"
+else:
+    typing_module = "typing_extensions"
 
 class PyiWriter(CythonTransform, DeclarationWriter):
     """Used By Cython to help Write stubfiles
