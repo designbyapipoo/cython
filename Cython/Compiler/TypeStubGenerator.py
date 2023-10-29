@@ -59,9 +59,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         if isinstance(ctype, PyrexTypes.BuiltinObjectType):
             return ctype.py_type_name()
 
-        if isinstance(ctype, PyrexTypes.CVoidType):
-            if ctype.is_ptr:
-                return "object"
+        if ctype is c_void_type:
             return "None"
         
         if isinstance(ctype, PyrexTypes.CIntType):
