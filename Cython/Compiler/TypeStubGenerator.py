@@ -38,8 +38,6 @@ class PyiWriter(CythonTransform, DeclarationWriter):
 
     def __init__(self, context):
         super(PyiWriter, self).__init__(context=context)
-        super(DeclarationWriter, self).__init__()
-        self.context = context
         self.module_name = ""
         self.class_func_count = 0 
 
