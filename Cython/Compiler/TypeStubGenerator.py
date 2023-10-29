@@ -205,7 +205,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
     def write_class(self, node, class_name):
         self.endline()
         self.put("class %s" % class_name)
-        if getattr(node,"bases",None) and isinstance(node.bases, TupleNode) and node.bases.args:
+        if node.bases and node.bases.is_sequence_constructor and node.bases.args:
             self.put("(")
             self.put(",".join([name.name for name in node.bases.args]))
             self.endline("):")
