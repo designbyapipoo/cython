@@ -266,18 +266,23 @@ class PyiWriter(CythonTransform, DeclarationWriter):
 
         return node
 
+    
+    def visit_NameNode(self, node):
+        self.put(node.name)
+
+    def visit_AttributeNode(self, node):
+        self.visit(node.obj)
+        self.put(u".%s" % node.attribute)
+
+
     def write_decorator(self, decorator):
         if isinstance(decorator, CallNode):
             return
 
         self.startline("@")
-        if isinstance(decorator, NameNode):
-            self.endline("%s" % decorator.name)
-        else:
-            assert isinstance(
-                decorator, AttributeNode
-            ), "Decorator was not an attribute node..."
-            self.endline("%s.%s" % (decorator.obj.name, decorator.attribute))
+        self.visitchildren(decorator)
+        self.endline()
+        
 
     def annotation_Str(self, annotation):
         return (
@@ -359,7 +364,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             # This is a little bit different than the original pull request
             # since I wanted there to be better typehints given to all the
             # objects hence why I added "Generator" as a typehint & keyword...
-
+            # TODO: Remove annotation_Str Function and replace it with something safer...
             annotation = self.annotation_Str(retype)
             if node.is_generator and not annotation.startswith("Generator"):
                 # TODO figure out how the extract the other two required variables...
@@ -394,8 +399,6 @@ class PyiWriter(CythonTransform, DeclarationWriter):
             self.putline(name)
         return node
 
-    def visit_NameNode(self, node):
-        return node
 
     def visit_ExprStatNode(self, node):
         if isinstance(node.expr, NameNode):
