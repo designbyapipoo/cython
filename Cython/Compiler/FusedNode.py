@@ -325,19 +325,19 @@ class FusedCFuncDefNode(StatListNode):
 
     def _buffer_check_numpy_dtype_setup_cases(self, pyx_code):
         "Setup some common cases to match dtypes against specializations"
-        with pyx_code.indenter("if kind in b'iu':"):
+        with pyx_code.indenter("if kind in u'iu':"):
             pyx_code.putln("pass")
             pyx_code.named_insertion_point("dtype_int")
 
-        with pyx_code.indenter("elif kind == b'f':"):
+        with pyx_code.indenter("elif kind == u'f':"):
             pyx_code.putln("pass")
             pyx_code.named_insertion_point("dtype_float")
 
-        with pyx_code.indenter("elif kind == b'c':"):
+        with pyx_code.indenter("elif kind == u'c':"):
             pyx_code.putln("pass")
             pyx_code.named_insertion_point("dtype_complex")
 
-        with pyx_code.indenter("elif kind == b'O':"):
+        with pyx_code.indenter("elif kind == u'O':"):
             pyx_code.putln("pass")
             pyx_code.named_insertion_point("dtype_object")
 
@@ -367,19 +367,20 @@ class FusedCFuncDefNode(StatListNode):
             ]
 
             for dtype_category, codewriter in dtypes:
-                if dtype_category:
-                    cond = '{{itemsize_match}} and (<Py_ssize_t>arg.ndim) == %d' % (
-                                                    specialized_type.ndim,)
-                    if dtype.is_int:
-                        cond += ' and {{signed_match}}'
+                if not dtype_category:
+                    continue
+                cond = '{{itemsize_match}} and (<Py_ssize_t>arg.ndim) == %d' % (
+                                                specialized_type.ndim,)
+                if dtype.is_int:
+                    cond += ' and {{signed_match}}'
 
-                    if final_type.is_pythran_expr:
-                        cond += ' and arg_is_pythran_compatible'
+                if final_type.is_pythran_expr:
+                    cond += ' and arg_is_pythran_compatible'
 
-                    with codewriter.indenter("if %s:" % cond):
-                        #codewriter.putln("print 'buffer match found based on numpy dtype'")
-                        codewriter.putln(self.match)
-                        codewriter.putln("break")
+                with codewriter.indenter("if %s:" % cond):
+                    #codewriter.putln("print 'buffer match found based on numpy dtype'")
+                    codewriter.putln(self.match)
+                    codewriter.putln("break")
 
     def _buffer_parse_format_string_check(self, pyx_code, decl_code,
                                           specialized_type, env):
@@ -465,7 +466,7 @@ class FusedCFuncDefNode(StatListNode):
                     if dtype is not None:
                         itemsize = dtype.itemsize
                         kind = ord(dtype.kind)
-                        dtype_signed = kind == 'i'
+                        dtype_signed = kind == u'i'
             """)
         pyx_code.indent(2)
         if pythran_types:
@@ -543,7 +544,7 @@ class FusedCFuncDefNode(StatListNode):
                 cdef {{memviewslice_cname}} memslice
                 cdef Py_ssize_t itemsize
                 cdef bint dtype_signed
-                cdef char kind
+                cdef Py_UCS4 kind
 
                 itemsize = -1
             """)
