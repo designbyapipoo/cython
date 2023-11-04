@@ -266,7 +266,7 @@ class PyiWriter(CythonTransform, DeclarationWriter):
 
         return node
 
-    
+  
     def visit_NameNode(self, node):
         self.put(node.name)
 
@@ -274,14 +274,11 @@ class PyiWriter(CythonTransform, DeclarationWriter):
         self.visit(node.obj)
         self.put(u".%s" % node.attribute)
 
-
     def write_decorator(self, decorator):
-        if isinstance(decorator, CallNode):
-            return
-
-        self.startline("@")
-        self.visitchildren(decorator)
-        self.endline()
+        attribte = decorator.as_cython_attribute()
+        if not attribte:
+            return 
+        self.putline("@%s" % attribte)
         
 
     def annotation_Str(self, annotation):
