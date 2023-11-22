@@ -1751,31 +1751,7 @@ class UnicodeNode(ConstNode):
 
     def generate_evaluation_code(self, code):
         if self.type.is_pyobject:
-            # FIXME: this should go away entirely!
-            # Since string_contains_lone_surrogates() returns False for surrogate pairs in Py2/UCS2,
-            # Py2 can generate different code from Py3 here.  Let's hope we get away with claiming that
-            # the processing of surrogate pairs in code was always ambiguous and lead to different results
-            # on P16/32bit Unicode platforms.
-            if StringEncoding.string_contains_lone_surrogates(self.value):
-                # lone (unpaired) surrogates are not really portable and cannot be
-                # decoded by the UTF-8 codec in Py3.3
-                self.result_code = code.get_py_const(py_object_type, 'ustring')
-                data_cname = code.get_string_const(
-                    StringEncoding.BytesLiteral(self.value.encode('unicode_escape')))
-                const_code = code.get_cached_constants_writer(self.result_code)
-                if const_code is None:
-                    return  # already initialised
-                const_code.mark_pos(self.pos)
-                const_code.putln(
-                    "%s = PyUnicode_DecodeUnicodeEscape(%s, sizeof(%s) - 1, NULL); %s" % (
-                        self.result_code,
-                        data_cname,
-                        data_cname,
-                        const_code.error_goto_if_null(self.result_code, self.pos)))
-                const_code.put_error_if_neg(
-                    self.pos, "__Pyx_PyUnicode_READY(%s)" % self.result_code)
-            else:
-                self.result_code = code.get_py_string_const(self.value)
+            self.result_code = code.get_py_string_const(self.value)
         else:
             self.result_code = code.get_pyunicode_ptr_const(self.value)
 
@@ -1787,25 +1763,20 @@ class UnicodeNode(ConstNode):
 
 
 class StringNode(PyConstNode):
-    # A Python str object, i.e. a byte string in Python 2.x and a
-    # unicode string in Python 3.x
+    # An unprefixed string literal.
     #
-    # value          BytesLiteral (or EncodedString with ASCII content)
-    # unicode_value  EncodedString or None
+    # value          String literal
     # is_identifier  boolean
 
     type = str_type
     is_string_literal = True
     is_identifier = None
-    unicode_value = None
 
     def calculate_constant_result(self):
-        if self.unicode_value is not None:
-            # only the Unicode value is portable across Py2/3
-            self.constant_result = self.unicode_value
+        self.constant_result = self.value
 
     def analyse_as_type(self, env):
-        return _analyse_name_as_type(self.unicode_value or self.value.decode('ISO8859-1'), self.pos, env)
+        return _analyse_name_as_type(self.value, self.pos, env)
 
     def as_sliced_node(self, start, stop, step=None):
         value = type(self.value)(self.value[start:stop:step])
@@ -2124,6 +2095,7 @@ class NameNode(AtomicExprNode):
             type = PyrexTypes.parse_basic_type(self.cython_attribute)
         elif env.in_c_type_context:
             type = PyrexTypes.parse_basic_type(self.name)
+
         if type:
             return type
 
@@ -2138,6 +2110,7 @@ class NameNode(AtomicExprNode):
             if type.is_pyobject and type.equivalent_type:
                 type = type.equivalent_type
             return type
+
         if self.name == 'object':
             # This is normally parsed as "simple C type", but not if we don't parse C types.
             return py_object_type
@@ -2759,17 +2732,21 @@ class ImportNode(ExprNode):
                 self.level = -1
             else:
                 self.level = 0
+
         module_name = self.module_name.analyse_types(env)
         self.module_name = module_name.coerce_to_pyobject(env)
         assert self.module_name.is_string_literal
+
         if self.name_list:
             name_list = self.name_list.analyse_types(env)
             self.name_list = name_list.coerce_to_pyobject(env)
         elif '.' in self.module_name.value:
+            # Splitting module name to handle submodules
             self.module_names = TupleNode(self.module_name.pos, args=[
                 IdentifierStringNode(self.module_name.pos, value=part, constant_result=part)
                 for part in map(StringEncoding.EncodedString, self.module_name.value.split('.'))
             ]).analyse_types(env)
+
         return self
 
     gil_message = "Python import"
