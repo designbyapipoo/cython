@@ -180,7 +180,7 @@ static PyObject *__Pyx_Import(PyObject *name, PyObject *from_list, int level) {
             if (strchr(__Pyx_MODULE_NAME, '.') != NULL) {
                 /* try package relative import first */
                 module = PyImport_ImportModuleLevelObject(
-                    name, $moddict_cname, empty_dict, from_list, 1);
+                    name, CGLOBAL($moddict_cname), empty_dict, from_list, 1);
                 if (unlikely(!module)) {
                     if (unlikely(!PyErr_ExceptionMatches(PyExc_ImportError)))
                         goto bad;
@@ -191,7 +191,7 @@ static PyObject *__Pyx_Import(PyObject *name, PyObject *from_list, int level) {
         }
         if (!module) {
             module = PyImport_ImportModuleLevelObject(
-                name, $moddict_cname, empty_dict, from_list, level);
+                name, CGLOBAL($moddict_cname), empty_dict, from_list, level);
         }
     }
 bad:
@@ -331,6 +331,7 @@ static int ${import_star}(PyObject* m) {
     PyObject *utf8_name = 0;
     PyObject *name;
     PyObject *item;
+    ${modulestatetype_cname} *mstate = ${modulestategetter_cname}(m);
 
     locals = PyDict_New();              if (!locals) goto bad;
     if (__Pyx_import_all_from(locals, m) < 0) goto bad;
@@ -342,7 +343,7 @@ static int ${import_star}(PyObject* m) {
         utf8_name = PyUnicode_AsUTF8String(name);
         if (!utf8_name) goto bad;
         s = PyBytes_AS_STRING(utf8_name);
-        if (${import_star_set}(item, name, s) < 0) goto bad;
+        if (${import_star_set}(mstate, item, name, s) < 0) goto bad;
         Py_DECREF(utf8_name); utf8_name = 0;
     }
     ret = 0;
@@ -673,7 +674,7 @@ static int __Pyx_ExportVoidPtr(PyObject *name, void *p, const char *sig) {
     PyObject *d;
     PyObject *cobj = 0;
 
-    d = PyDict_GetItem($moddict_cname, PYIDENT("$api_name"));
+    d = PyDict_GetItem(CGLOBAL($moddict_cname), PYIDENT("$api_name"));
     Py_XINCREF(d);
     if (!d) {
         d = PyDict_New();

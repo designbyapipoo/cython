@@ -1981,6 +1981,7 @@ class NameNode(AtomicExprNode):
     allow_null = False
     nogil = False
     inferred_type = None
+    module_state_lookup = ""
 
     def as_cython_attribute(self):
         return self.cython_attribute
@@ -2401,12 +2402,16 @@ class NameNode(AtomicExprNode):
             return "<error>"  # There was an error earlier
         if self.entry.is_cpp_optional and not self.is_target:
             return "(*%s)" % entry.cname
-        return entry.cname
+        return self.module_state_lookup + entry.cname
 
     def generate_result_code(self, code):
         entry = self.entry
         if entry is None:
             return  # There was an error earlier
+        if entry.scope.is_module_scope and (
+                entry.is_pyglobal or entry.is_cclass_var_entry):
+            # TODO - eventually this should apply to cglobals too
+            self.module_state_lookup = code.name_in_module_state("")
         if entry.utility_code:
             code.globalstate.use_utility_code(entry.utility_code)
         if entry.is_builtin and entry.is_const:
@@ -2463,13 +2468,16 @@ class NameNode(AtomicExprNode):
                         interned_cname,
                         code.error_goto_if_null(self.result(), self.pos)))
             else:
+                namespace_cname = code.namespace_cname_in_module_state(entry.scope)
+                namespace_cname_is_type = self.entry.scope.namespace_cname_is_type
                 # FIXME: is_pyglobal is also used for class namespace
                 code.globalstate.use_utility_code(
                     UtilityCode.load_cached("GetNameInClass", "ObjectHandling.c"))
                 code.putln(
-                    '__Pyx_GetNameInClass(%s, %s, %s); %s' % (
+                    '__Pyx_GetNameInClass(%s, %s%s, %s); %s' % (
                         self.result(),
-                        entry.scope.namespace_cname,
+                        "(PyObject*)" if namespace_cname_is_type else "",
+                        namespace_cname,
                         interned_cname,
                         code.error_goto_if_null(self.result(), self.pos)))
             self.generate_gotref(code)
@@ -2510,14 +2518,17 @@ class NameNode(AtomicExprNode):
         if entry.is_pyglobal:
             assert entry.type.is_pyobject, "Python global or builtin not a Python object"
             interned_cname = code.intern_identifier(self.entry.name)
-            namespace = self.entry.scope.namespace_cname
+            namespace = code.namespace_cname_in_module_state(self.entry.scope)
+            namespace_is_type = self.entry.scope.namespace_cname_is_type
+            namespace_needs_type = False
             if entry.is_member:
                 # if the entry is a member we have to cheat: SetAttr does not work
                 # on types, so we create a descriptor which is then added to tp_dict.
                 setter = '__Pyx_SetItemOnTypeDict'
+                namespace_needs_type = True
             elif entry.scope.is_module_scope:
                 setter = 'PyDict_SetItem'
-                namespace = Naming.moddict_cname
+                namespace = code.name_in_module_state(Naming.moddict_cname)
             elif entry.is_pyclass_attr:
                 # Special-case setting __new__
                 n = "SetNewInClass" if self.name == "__new__" else "SetNameInClass"
@@ -2525,6 +2536,10 @@ class NameNode(AtomicExprNode):
                 setter = '__Pyx_' + n
             else:
                 assert False, repr(entry)
+            if namespace_is_type and not namespace_needs_type:
+                namespace = "((PyObject*)%s)" % namespace
+            # This combination shouldn't happen, and we don't know enough to cast
+            assert not (namespace_needs_type and not namespace_is_type)
             code.put_error_if_neg(
                 self.pos,
                 '%s(%s, %s, %s)' % (
@@ -2540,7 +2555,7 @@ class NameNode(AtomicExprNode):
             if entry.is_member:
                 # in Py2.6+, we need to invalidate the method cache
                 code.putln("PyType_Modified(%s);" %
-                           entry.scope.parent_type.typeptr_cname)
+                           code.namespace_cname_in_module_state(self.entry.scope))
         else:
             if self.type.is_memoryviewslice:
                 self.generate_acquire_memoryviewslice(rhs, code)
@@ -3720,7 +3735,7 @@ class FormattedValueNode(ExprNode):
             # common case: expect simple Unicode pass-through if no format spec
             format_func = '__Pyx_PyObject_FormatSimple'
             # passing a Unicode format string in Py2 forces PyObject_Format() to also return a Unicode string
-            format_spec = Naming.empty_unicode
+            format_spec = code.name_in_module_state(Naming.empty_unicode)
 
         conversion_char = self.conversion_char
         if conversion_char == 's' and value_is_unicode:
@@ -8671,10 +8686,7 @@ class TupleNode(SequenceNode):
         return True
 
     def calculate_result_code(self):
-        if len(self.args) > 0:
-            return self.result_code
-        else:
-            return Naming.empty_tuple
+        return self.result_code
 
     def calculate_constant_result(self):
         self.constant_result = tuple([
@@ -8689,7 +8701,7 @@ class TupleNode(SequenceNode):
 
     def generate_operation_code(self, code):
         if len(self.args) == 0:
-            # result_code is Naming.empty_tuple
+            self.result_code = code.name_in_module_state(Naming.empty_tuple)
             return
 
         if self.is_literal or self.is_partly_literal:
@@ -10061,6 +10073,7 @@ class PyCFunctionNode(ExprNode, ModuleNameMixin):
         else:
             flags = '0'
 
+        moddict_cname = code.name_in_module_state(Naming.moddict_cname)
         code.putln(
             '%s = %s(&%s, %s, %s, %s, %s, %s, %s); %s' % (
                 self.result(),
@@ -10070,7 +10083,7 @@ class PyCFunctionNode(ExprNode, ModuleNameMixin):
                 self.get_py_qualified_name(code),
                 self.closure_result_code(),
                 self.get_py_mod_name(code),
-                Naming.moddict_cname,
+                moddict_cname,
                 code_object_result,
                 code.error_goto_if_null(self.result(), self.pos)))
 
@@ -10186,6 +10199,8 @@ class CodeObjectNode(ExprNode):
         elif self.def_node.is_generator:
             flags.append('CO_GENERATOR')
 
+        empty_bytes = code.name_in_module_state(Naming.empty_bytes)
+        empty_tuple = code.name_in_module_state(Naming.empty_tuple)
         code.putln("%s = (PyObject*)__Pyx_PyCode_New(%d, %d, %d, %d, 0, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s); %s" % (
             self.result_code,
             len(func.args) - func.num_kwonly_args,  # argcount
@@ -10193,16 +10208,16 @@ class CodeObjectNode(ExprNode):
             func.num_kwonly_args,      # kwonlyargcount (Py3 only)
             len(self.varnames.args),   # nlocals
             '|'.join(flags) or '0',    # flags
-            Naming.empty_bytes,        # code
-            Naming.empty_tuple,        # consts
-            Naming.empty_tuple,        # names (FIXME)
+            empty_bytes,               # code
+            empty_tuple,               # consts
+            empty_tuple,               # names (FIXME)
             self.varnames.result(),    # varnames
-            Naming.empty_tuple,        # freevars (FIXME)
-            Naming.empty_tuple,        # cellvars (FIXME)
+            empty_tuple,               # freevars (FIXME)
+            empty_tuple,               # cellvars (FIXME)
             file_path_const,           # filename
             func_name,                 # name
             self.pos[1],               # firstlineno
-            Naming.empty_bytes,        # lnotab
+            empty_bytes,               # lnotab
             code.error_goto_if_null(self.result_code, self.pos),
             ))
 
@@ -14019,13 +14034,14 @@ class PyTypeTestNode(CoercionNode):
         if self.type.typeobj_is_available():
             if self.type.is_builtin_type:
                 type_test = self.type.type_test_code(
+                    code,
                     self.arg.py_result(),
                     self.notnone, exact=self.exact_builtin_type)
                 code.globalstate.use_utility_code(UtilityCode.load_cached(
                     "RaiseUnexpectedTypeError", "ObjectHandling.c"))
             else:
                 type_test = self.type.type_test_code(
-                    self.arg.py_result(), self.notnone)
+                    code, self.arg.py_result(), self.notnone)
                 code.globalstate.use_utility_code(
                     UtilityCode.load_cached("ExtTypeTest", "ObjectHandling.c"))
             code.putln("if (!(%s)) %s" % (
