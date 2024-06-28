@@ -87,6 +87,8 @@
   #define CYTHON_USE_PYLONG_INTERNALS 0
   #undef CYTHON_AVOID_BORROWED_REFS
   #define CYTHON_AVOID_BORROWED_REFS 1
+  #undef CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS
+  #define CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS 1
   #undef CYTHON_ASSUME_SAFE_MACROS
   #define CYTHON_ASSUME_SAFE_MACROS 0
   #undef CYTHON_ASSUME_SAFE_SIZE
@@ -148,6 +150,8 @@
   #define CYTHON_USE_PYLONG_INTERNALS 0
   #undef CYTHON_AVOID_BORROWED_REFS
   #define CYTHON_AVOID_BORROWED_REFS 1
+  #undef CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS
+  #define CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS 1
   #undef CYTHON_ASSUME_SAFE_MACROS
   #define CYTHON_ASSUME_SAFE_MACROS 0
   #ifndef CYTHON_ASSUME_SAFE_SIZE
@@ -223,6 +227,9 @@
   #define CYTHON_USE_PYLONG_INTERNALS 0
   #ifndef CYTHON_AVOID_BORROWED_REFS
     #define CYTHON_AVOID_BORROWED_REFS 0
+  #endif
+  #ifndef CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS
+    #define CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS 0
   #endif
   #undef CYTHON_ASSUME_SAFE_MACROS
   #define CYTHON_ASSUME_SAFE_MACROS 0
@@ -308,6 +315,13 @@
   // CYTHON_AVOID_BORROWED_REFS - Avoid borrowed references and always request owned references directly instead.
   #ifndef CYTHON_AVOID_BORROWED_REFS
     #define CYTHON_AVOID_BORROWED_REFS 0
+  #endif
+  // CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS - Avoid borrowed references that are not thread-safe in the free-threaded build of CPython.
+  #if CYTHON_COMPILING_IN_CPYTHON_FREETHREADING
+    #undef CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS
+    #define CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS 1
+  #elif !defined(CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS)
+    #define CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS 0
   #endif
   // CYTHON_ASSUME_SAFE_MACROS - Assume that macro calls do not fail and do not raise exceptions.
   #ifndef CYTHON_ASSUME_SAFE_MACROS
@@ -1035,6 +1049,21 @@ static CYTHON_INLINE PyObject * __Pyx_PyDict_GetItemStrWithError(PyObject *dict,
 #else
   #define __Pyx_SET_REFCNT(obj, refcnt) Py_REFCNT(obj) = (refcnt)
   #define __Pyx_SET_SIZE(obj, size) Py_SIZE(obj) = (size)
+#endif
+
+#if CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS && PY_VERSION_HEX >= 0x030d00b1
+#define __Pyx_PyList_GetItemRef(o, i) PyList_GetItemRef(o, i)
+#define __Pyx_PyDict_GetItemRef(dict, key, result) PyDict_GetItemRef(dict, key, result)
+#else
+#define __Pyx_PyList_GetItemRef(o, i) __Pyx_NewRef(PyList_GET_ITEM(o, i))
+static CYTHON_INLINE int __Pyx_PyDict_GetItemRef(PyObject *dict, PyObject *key, PyObject **result) {
+  *result = PyDict_GetItem(dict, key);
+  if (*result == NULL) {
+    return 0;
+  }
+  Py_INCREF(*result);
+  return 1;
+}
 #endif
 
 #if CYTHON_ASSUME_SAFE_MACROS
@@ -2187,19 +2216,33 @@ static PyObject* __Pyx_PyCode_New(
     }
 
     #if CYTHON_COMPILING_IN_LIMITED_API
+
+    #if CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS && __PYX_LIMITED_VERSION_HEX >= 0x030d00b1
+    if (unlikely(PyDict_GetItemRef(tuple_dedup_map, varnames_tuple, &varnames_tuple_dedup) < 0)) goto done;
+    #else // !(CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS && __PYX_LIMITED_VERSION_HEX >= 0x030d00b1)
     varnames_tuple_dedup = PyDict_GetItem(tuple_dedup_map, varnames_tuple);
+    #if CYTHON_AVOID_BORROWED_REFS
+    Py_XINCREF(varnames_tuple_dedup);
+    #endif // CYTHON_AVOID_BORROWED_REFS
+    #endif // CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS && __PYX_LIMITED_VERSION_HEX >= 0x030d00b1
     if (!varnames_tuple_dedup) {
         if (unlikely(PyDict_SetItem(tuple_dedup_map, varnames_tuple, varnames_tuple) < 0)) goto done;
         varnames_tuple_dedup = varnames_tuple;
     }
-    #else
+
+    #else // !CYTHON_COMPILING_IN_LIMITED_API
+
+    #if CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS && PY_VERSION_HEX >= 0x030d00b1
+    if(unlikely(PyDict_SetDefaultRef(tuple_dedup_map, varnames_tuple, varnames_tuple, &varnames_tuple_dedup) < 0)) goto done;
+    #else // !(CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS && PY_VERSION_HEX >= 0x030d00b1)
     varnames_tuple_dedup = PyDict_SetDefault(tuple_dedup_map, varnames_tuple, varnames_tuple);
     if (unlikely(!varnames_tuple_dedup)) goto done;
-    #endif
-
     #if CYTHON_AVOID_BORROWED_REFS
     Py_INCREF(varnames_tuple_dedup);
-    #endif
+    #endif // CYTHON_AVOID_BORROWED_REFS
+    #endif // CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS && PY_VERSION_HEX >= 0x030d00b1
+
+    #endif // CYTHON_COMPILING_IN_LIMITED_API
 
     code_obj = (PyObject*) __Pyx__PyCode_New(
         (int) descr.argcount,
@@ -2221,7 +2264,7 @@ static PyObject* __Pyx_PyCode_New(
     );
 
 done:
-    #if CYTHON_AVOID_BORROWED_REFS
+    #if CYTHON_AVOID_BORROWED_REFS || CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS
     Py_XDECREF(varnames_tuple_dedup);
     #endif
     Py_DECREF(varnames_tuple);
